@@ -1,0 +1,149 @@
+clear; clc; close all;
+
+%% PARAMETERS
+R = 0.1;
+N = 10;
+I = 1;
+
+rm = 0.01;
+rw = 0.02;
+
+n_phi = 10;
+n_t = 800;
+
+mu0 = 4*pi*1e-7;
+
+%% OVERLAPPING CASE
+alpha_min = atan(2*rw/R);
+alpha = 0.65 * alpha_min;   % overlapping
+
+pitch = R*tan(alpha);
+L = N*pitch;
+
+fprintf('pitch = %.4f, 2rw = %.4f\n', pitch, 2*rw);
+
+%% HELIX GEOMETRY
+t = linspace(0,2*pi*N,n_t);
+
+x = (t/(2*pi))*R*tan(alpha) - L/2;   % axis direction
+y = -R*cos(t);
+z =  R*sin(t);
+
+dx = gradient(x);
+dy = gradient(y);
+dz = gradient(z);
+
+%% BUILD THICK WIRE
+phi = linspace(0,2*pi,n_phi);
+
+Xw=[]; Yw=[]; Zw=[];
+dLx=[]; dLy=[]; dLz=[];
+
+for i = 1:length(t)
+
+    T = [dx(i),dy(i),dz(i)];
+    T = T/norm(T);
+
+    if abs(T(1))<0.9
+        N1 = cross(T,[1 0 0]);
+    else
+        N1 = cross(T,[0 1 0]);
+    end
+
+    N1 = N1/norm(N1);
+    N2 = cross(T,N1);
+
+    for j = 1:length(phi)
+
+        pos = [x(i),y(i),z(i)] + rm*(cos(phi(j))*N1 + sin(phi(j))*N2);
+
+        Xw(end+1)=pos(1);
+        Yw(end+1)=pos(2);
+        Zw(end+1)=pos(3);
+
+        dLx(end+1)=dx(i);
+        dLy(end+1)=dy(i);
+        dLz(end+1)=dz(i);
+    end
+end
+
+I_fil = I/n_phi;
+
+%% IDEAL SOLENOID
+n = 1/pitch;
+B_ideal = mu0*n*I;
+
+%% FIELD COMPUTATION
+x_vals = linspace(-1.5*L,1.5*L,400);
+
+Bx_axis = zeros(size(x_vals));
+Bx_near = zeros(size(x_vals));
+
+r_axis = 0;
+r_near = 0.085;
+
+for k = 1:length(x_vals)
+
+    P1 = [x_vals(k), r_axis, 0];
+    P2 = [x_vals(k), r_near, 0];
+
+    B1 = computeB(P1,Xw,Yw,Zw,dLx,dLy,dLz,I_fil,mu0);
+    B2 = computeB(P2,Xw,Yw,Zw,dLx,dLy,dLz,I_fil,mu0);
+
+    Bx_axis(k) = abs(B1(1));
+    Bx_near(k) = abs(B2(1));
+end
+
+%% IDEAL PROFILE (STEP FUNCTION)
+B_ideal_profile = zeros(size(x_vals));
+
+for k = 1:length(x_vals)
+    if abs(x_vals(k)) <= L/2
+        B_ideal_profile(k) = B_ideal;
+    else
+        B_ideal_profile(k) = 0;
+    end
+end
+
+%% ================= FINAL PLOT =================
+figure
+
+plot(x_vals, Bx_axis, 'LineWidth', 2)
+hold on
+plot(x_vals, Bx_near, 'LineWidth', 1.8)
+plot(x_vals, B_ideal_profile, '--r', 'LineWidth', 2)
+
+xline(-L/2,'k:','LineWidth',1.5)
+xline(L/2,'k:','LineWidth',1.5)
+
+grid on
+
+xlabel('x position along solenoid axis [m]', 'FontSize', 16)
+ylabel('Magnetic Field |B_x| [T]', 'FontSize', 16)
+
+title('Magnetic Field in Overlapping Helical Solenoid', 'FontSize', 18)
+
+legend('On axis','Near wire','Ideal infinite solenoid',...
+       'Location','best','FontSize',13)
+
+set(gca,'FontSize',14)
+
+%% ================= FUNCTION =================
+function B = computeB(P,Xw,Yw,Zw,dLx,dLy,dLz,I_fil,mu0)
+
+    rx = P(1)-Xw;
+    ry = P(2)-Yw;
+    rz = P(3)-Zw;
+
+    r3 = (rx.^2 + ry.^2 + rz.^2).^(3/2) + 1e-12;
+
+    cx = dLy.*rz - dLz.*ry;
+    cy = dLz.*rx - dLx.*rz;
+    cz = dLx.*ry - dLy.*rx;
+
+    Bx = sum(cx./r3);
+    By = sum(cy./r3);
+    Bz = sum(cz./r3);
+
+    B = mu0/(4*pi) * I_fil * [Bx,By,Bz];
+end
