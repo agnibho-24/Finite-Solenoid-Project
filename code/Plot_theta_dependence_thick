@@ -1,0 +1,178 @@
+%%This code generates a plot of the amplitude of the magnetic field against theta for different value od z and r for a finite solenoid with finitely thick wires. 
+
+
+clear; clc; close all;
+
+%% PARAMETERS
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+
+rm = 0.01;
+rw=0.015;
+
+L = N * R * tan(a);
+mu0 = 4*pi*1e-7;
+
+%% ============================================================
+%% --- THICK WIRE GEOMETRY (VOLUME) ---
+%% ============================================================
+
+t   = linspace(0, 2*pi*N, 2000);
+phi = linspace(0, 2*pi, 16);
+k   = linspace(0, rm, 6);
+
+[T,PHI,K] = meshgrid(t,phi,k);
+
+dt   = t(2)-t(1);
+dphi = phi(2)-phi(1);
+dk   = k(2)-k(1);
+
+% ORIGINAL HELIX (axis = x)
+x_old = (T/(2*pi)) * R * tan(a) + K.*sin(PHI);
+y_old = -(R+rm + K.*cos(PHI)) .* cos(T);
+z_old =  (R+rm + K.*cos(PHI)) .* sin(T);
+
+% ROTATE → axis along z
+x = y_old;
+y = z_old;
+z = x_old;
+
+%% Tangent
+dxdt = gradient(x, dt);
+dydt = gradient(y, dt);
+dzdt = gradient(z, dt);
+
+dl = sqrt(dxdt.^2 + dydt.^2 + dzdt.^2) + 1e-15;
+
+tx = dxdt ./ dl;
+ty = dydt ./ dl;
+tz = dzdt ./ dl;
+
+%% Current density
+J = I / (pi * rm^2);
+
+dV = K * dphi * dk;
+
+Jx = J .* tx .* dl .* dV;
+Jy = J .* ty .* dl .* dV;
+Jz = J .* tz .* dl .* dV;
+
+% Flatten
+xm = x(:); ym = y(:); zm = z(:);
+Jx = Jx(:); Jy = Jy(:); Jz = Jz(:);
+
+%% ============================================================
+%% --- THETA SWEEP (NOW AROUND Z-AXIS) ---
+%% ============================================================
+
+z_positions = [-0.05, 0, L/2];
+r_values = [R/2, R+0.04, 3*R];
+
+theta = linspace(0, 2*pi, 150);
+
+Bmag = zeros(length(z_positions), length(r_values), length(theta));
+
+for iz = 1:length(z_positions)
+
+    z0 = z_positions(iz);
+
+    for ir = 1:length(r_values)
+
+        r0 = r_values(ir);
+
+        for it = 1:length(theta)
+
+            th = theta(it);
+
+            % circle in xy-plane (around z-axis)
+            x0 = r0 * cos(th);
+            y0 = r0 * sin(th);
+
+            rx = x0 - xm;
+            ry = y0 - ym;
+            rz = z0 - zm;
+
+            r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-10;
+
+            cx = Jy.*rz - Jz.*ry;
+            cy = Jz.*rx - Jx.*rz;
+            cz = Jx.*ry - Jy.*rx;
+
+            Bx_val = sum(cx ./ r.^3);
+            By_val = sum(cy ./ r.^3);
+            Bz_val = sum(cz ./ r.^3);
+
+            Bmag(iz, ir, it) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+        end
+    end
+end
+
+Bmag = mu0/(4*pi) * Bmag;
+
+%% ============================================================
+%% --- PLOTTING ---
+%% ============================================================
+
+figure;
+
+for iz = 1:length(z_positions)
+
+    subplot(1, length(z_positions), iz);
+    hold on;
+
+    for ir = 1:length(r_values)
+        plot(theta, squeeze(Bmag(iz, ir, :)), 'LineWidth', 2);
+    end
+
+    title(sprintf('z = %.3fm', z_positions(iz)));
+    xlabel('\theta (rad)');
+    ylabel('|B| (T)');
+    grid on;
+
+    legend({...
+        sprintf('r = %.2f', r_values(1)), ...
+        sprintf('r = %.2f', r_values(2)), ...
+        sprintf('r = %.2f', r_values(3)) ...
+    });
+end
+
+%% ============================================================
+%% --- GEOMETRY VISUALIZATION ---
+%% ============================================================
+
+figure; hold on; axis equal;
+
+% central helix (for reference)
+t_plot = linspace(0, 2*pi*N, 1000);
+
+x_old = (t_plot/(2*pi)) * R * tan(a);
+y_old = -(R)*cos(t_plot);
+z_old = (R)*sin(t_plot);
+
+x_plot = y_old;
+y_plot = z_old;
+z_plot = x_old;
+
+plot3(x_plot, y_plot, z_plot, 'b', 'LineWidth', 1.5);
+
+% observation circles
+theta_vis = linspace(0, 2*pi, 100);
+
+for iz = 1:length(z_positions)
+    z0 = z_positions(iz);
+
+    for ir = 1:length(r_values)
+        r0 = r_values(ir);
+
+        x0 = r0 * cos(theta_vis);
+        y0 = r0 * sin(theta_vis);
+
+        plot3(x0, y0, z0*ones(size(theta_vis)), '--');
+    end
+end
+
+xlabel('x(m)'); ylabel('y(m)'); zlabel('z');
+title('Solenoid (axis = z) + Observation Circles');
+grid on;
