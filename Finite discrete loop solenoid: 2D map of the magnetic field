@@ -1,0 +1,123 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.special import ellipk, ellipe
+
+# Solenoid parameters 
+N     = 20       # number of discrete turns
+R     = 0.05     # coil radius (m)
+I     = 1.0      # current (A)
+pitch = 0.012    # centre-to-centre spacing between turns (m)
+
+mu0 = 4 * np.pi * 1e-7
+
+L_total = (N - 1) * pitch
+z_loops = np.linspace(-L_total / 2, L_total / 2, N)
+
+print(f"Solenoid length: {L_total*100:.1f} cm")
+print(f"Ideal infinite-solenoid B_z = {mu0 * N/L_total * I * 1e3:.3f} mT")
+def loop_field(r, z, R_loop, I_loop):
+    """
+    (B_r, B_z) at cylindrical coords (r, z) for a single loop at z=0.
+    """
+    r  = np.asarray(r, dtype=float)
+    z  = np.asarray(z, dtype=float)
+    Br = np.zeros_like(r)
+    Bz = np.zeros_like(r)
+
+    alpha2 = (R_loop - r)**2 + z**2
+    beta2  = (R_loop + r)**2 + z**2
+    beta   = np.sqrt(beta2)
+    k2     = np.clip(1 - alpha2 / beta2, 0, 1 - 1e-10)
+
+    K = ellipk(k2)
+    E = ellipe(k2)
+    C = mu0 * I_loop / (2 * np.pi)
+
+    Bz = C / beta * (K + (R_loop**2 - r**2 - z**2) / alpha2 * E)
+
+    off = r > 1e-10
+    Br[off] = (C * z[off] / (r[off] * beta[off]) *
+               (-K[off] + (R_loop**2 + r[off]**2 + z[off]**2) / alpha2[off] * E[off]))
+    return Br, Bz
+
+
+def solenoid_field(r, z):
+    """Sum contributions from all N loops."""
+    Br_tot = np.zeros_like(np.asarray(r, dtype=float))
+    Bz_tot = np.zeros_like(np.asarray(r, dtype=float))
+    for z0 in z_loops:
+        Br, Bz = loop_field(r, z - z0, R, I)
+        Br_tot += Br
+        Bz_tot += Bz
+    return Br_tot, Bz_tot
+z_axis = np.linspace(-L_total, L_total, 600)
+_, Bz_axis = solenoid_field(np.zeros_like(z_axis), z_axis)
+
+B_ideal = mu0 * (N / L_total) * I
+
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(z_axis * 100, Bz_axis * 1e3, color='royalblue', lw=2, label='Discrete solenoid $B_z$')
+ax.axhline(B_ideal * 1e3, color='crimson', ls='--', lw=1.4, label=f'Infinite solenoid = {B_ideal*1e3:.2f} mT')
+
+for z0 in z_loops:
+    ax.axvline(z0 * 100, color='gold', lw=0.6, alpha=0.7)
+ax.axvspan(z_loops[0]*100, z_loops[-1]*100, alpha=0.07, color='royalblue', label='Solenoid interior')
+
+ax.set_xlabel('z  (cm)', fontsize=12)
+ax.set_ylabel('$B_z$  (mT)', fontsize=12)
+ax.set_title(f'Axial Field Profile — {N} discrete turns, R={R*100:.0f} cm, pitch={pitch*100:.1f} cm')
+ax.legend(fontsize=10)
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+r_vals = np.linspace(0, 1.8 * R, 400)
+
+z_centre  = 0.0
+z_quarter = L_total / 4
+z_edge    = L_total / 2
+
+_, Bz_centre  = solenoid_field(r_vals, np.full_like(r_vals, z_centre))
+_, Bz_quarter = solenoid_field(r_vals, np.full_like(r_vals, z_quarter))
+_, Bz_edge    = solenoid_field(r_vals, np.full_like(r_vals, z_edge))
+
+fig, ax = plt.subplots(figsize=(9, 4))
+ax.plot(r_vals * 100, Bz_centre  * 1e3, color='royalblue',  lw=2, label='z = 0 (centre)')
+ax.plot(r_vals * 100, Bz_quarter * 1e3, color='darkorange', lw=2, label=f'z = L/4 = {z_quarter*100:.1f} cm')
+ax.plot(r_vals * 100, Bz_edge    * 1e3, color='seagreen',   lw=2, label=f'z = L/2 = {z_edge*100:.1f} cm (edge)')
+ax.axvline(R * 100, color='gray', ls=':', lw=1.2, label='Coil radius R')
+ax.axhline(0, color='black', lw=0.5)
+
+ax.set_xlabel('r  (cm)', fontsize=12)
+ax.set_ylabel('$B_z$  (mT)', fontsize=12)
+ax.set_title('Radial Field Profile at Different Axial Positions')
+ax.legend(fontsize=10)
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+z_grid = np.linspace(-1.4 * L_total / 2, 1.4 * L_total / 2, 200)
+r_grid = np.linspace(0, 2.2 * R, 120)
+ZZ, RR = np.meshgrid(z_grid, r_grid)
+
+BRR, BZZ = solenoid_field(RR.ravel(), ZZ.ravel())
+BRR = BRR.reshape(RR.shape)
+BZZ = BZZ.reshape(ZZ.shape)
+B_mag = np.sqrt(BRR**2 + BZZ**2)
+
+fig, ax = plt.subplots(figsize=(12, 6))
+cf = ax.contourf(ZZ * 100, RR * 100, B_mag * 1e3, levels=256, cmap='inferno')
+cbar = fig.colorbar(cf, ax=ax, pad=0.02)
+cbar.set_label('|B|  (mT)', fontsize=11)
+
+ax.streamplot(z_grid * 100, r_grid * 100, BZZ, BRR,
+              color='white', linewidth=0.7, density=1.8, arrowsize=0.8)
+
+for z0 in z_loops:
+    ax.plot([z0*100, z0*100], [0, R*100], color='cyan', lw=1.0, alpha=0.6)
+ax.axhline(R * 100, color='cyan', lw=1.0, ls='--', alpha=0.5, label='Coil radius R')
+
+ax.set_xlabel('z  (cm)', fontsize=12)
+ax.set_ylabel('r  (cm)', fontsize=12)
+ax.set_title(f'2-D Magnetic Field Map — {N} discrete loops  (r–z half-plane)')
+ax.legend(fontsize=9, framealpha=0.4)
+plt.tight_layout()
+plt.show()
