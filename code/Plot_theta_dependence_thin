@@ -1,0 +1,96 @@
+%%This code generates a plot of the amplitude of the magnetic field against theta, at different values of r and z for a finite solenoid with infinitely thin wires
+
+clear; clc; close all;
+%% PARAMETERS
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+L = N * R * tan(a);
+%% HELIX GEOMETRY (original)
+t = linspace(0, 2*pi*N, 2000);
+x_old = (t/(2*pi)) * R * tan(a);
+y_old = -(R)*cos(t);
+z_old = (R)*sin(t);
+% ROTATE → axis along z
+x = y_old;
+y = z_old;
+z = x_old;
+%% DISCRETIZATION
+dlx = diff(x);
+dly = diff(y);
+dlz = diff(z);
+xm = (x(1:end-1) + x(2:end))/2;
+ym = (y(1:end-1) + y(2:end))/2;
+zm = (z(1:end-1) + z(2:end))/2;
+mu0 = 4*pi*1e-7;
+%% OBSERVATION POINTS (now along z)
+z_positions = [-0.05, 0, L/2];
+r_values = [R/2, R+0.02, 3*R];
+theta = linspace(0, 2*pi, 150);
+%% STORAGE
+Bmag = zeros(length(z_positions), length(r_values), length(theta));
+%% MAIN COMPUTATION
+for iz = 1:length(z_positions)
+    z0 = z_positions(iz);
+    for ir = 1:length(r_values)
+        r0 = r_values(ir);
+        for it = 1:length(theta)
+            th = theta(it);
+            % Circle in xy-plane (around z-axis)
+            x0 = r0 * cos(th);
+            y0 = r0 * sin(th);
+            rx = x0 - xm;
+            ry = y0 - ym;
+            rz = z0 - zm;
+            r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+            % Biot–Savart
+            cx = dly.*rz - dlz.*ry;
+            cy = dlz.*rx - dlx.*rz;
+            cz = dlx.*ry - dly.*rx;
+            Bx_val = sum(cx ./ r.^3);
+            By_val = sum(cy ./ r.^3);
+            Bz_val = sum(cz ./ r.^3);
+            Bmag(iz, ir, it) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+        end
+    end
+end
+%% APPLY CONSTANT
+Bmag = mu0*I/(4*pi) * Bmag;
+%% PLOTTING
+figure;
+for iz = 1:length(z_positions)
+    subplot(1, length(z_positions), iz);
+    hold on;
+    for ir = 1:length(r_values)
+        plot(theta, squeeze(Bmag(iz, ir, :)), 'LineWidth', 2);
+    end
+    title(sprintf('z = %.3fm', z_positions(iz)));
+    xlabel('\theta (rad)');
+    ylabel('|B| (T)');
+    grid on;
+    legend({...
+        sprintf('r = %.2f', r_values(1)), ...
+        sprintf('r = %.2f', r_values(2)), ...
+        sprintf('r = %.2f', r_values(3)) ...
+    });
+end
+%% GEOMETRY VISUALIZATION
+figure; hold on; axis equal;
+% Plot helix
+plot3(x, y, z, 'b');
+% Observation circles
+theta_vis = linspace(0, 2*pi, 100);
+for iz = 1:length(z_positions)
+    z0 = z_positions(iz);
+    for ir = 1:length(r_values)
+        r0 = r_values(ir);
+        x0 = r0 * cos(theta_vis);
+        y0 = r0 * sin(theta_vis);
+        z0_array = z0 * ones(size(theta_vis));
+        plot3(x0, y0, z0_array, '--');
+    end
+end
+xlabel('x(m)'); ylabel('y(m)'); zlabel('z');
+title('Helix + Observation Circles (axis = z)');
+grid on;
