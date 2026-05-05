@@ -1,0 +1,137 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
+
+# Physical constants 
+mu0 = 4 * np.pi * 1e-7   # T·m/A
+
+# Solenoid parameters
+R       = 0.1    # coil radius [m]
+d_wire  = 0.01   # wire diameter / turn spacing [m]
+N_turns = 20      # number of turns
+I       = 1.0     # current [A]
+N_seg   = 250     # Biot-Savart segments per loop
+
+pitch   = d_wire  # discrete (touching) turns — change to 2*d_wire, 0.5*d_wire etc.
+
+# Derived
+z_loop  = np.arange(N_turns) * pitch
+z_loop -= z_loop.mean()          # centre stack at z = 0
+L       = z_loop[-1] - z_loop[0] # coil length
+
+
+
+
+def loop_segments(R, z_c, N_seg):
+    theta = np.linspace(0, 2 * np.pi, N_seg + 1)
+    pts   = np.column_stack([R * np.cos(theta),
+                              R * np.sin(theta),
+                              np.full(N_seg + 1, z_c)])
+    return pts[:-1], pts[1:]
+
+
+def all_segments(R, z_loop, N_seg):
+    S, E = [], []
+    for z_c in z_loop:
+        s, e = loop_segments(R, z_c, N_seg)
+        S.append(s);  E.append(e)
+    return np.vstack(S), np.vstack(E)
+
+
+def biot_savart(field_pts, starts, ends, I, mu0):
+    """Vectorised Biot-Savart.  Returns B (M,3) [Tesla]."""
+    dl    = ends - starts                                       # (K,3)
+    mid   = 0.5 * (starts + ends)                              # (K,3)
+    r_vec = field_pts[:, None, :] - mid[None, :, :]            # (M,K,3)
+    r_mag = np.linalg.norm(r_vec, axis=-1, keepdims=True)
+    r_mag = np.where(r_mag < 1e-12, 1e-12, r_mag)
+    cross = np.cross(dl[None, :, :], r_vec / r_mag)            # (M,K,3)
+    dB    = (mu0 * I / (4 * np.pi)) * cross / r_mag**2
+    return dB.sum(axis=1)
+
+
+# Pre-compute all wire segments once
+seg_starts, seg_ends = all_segments(R, z_loop, N_seg)
+
+print(f"Solenoid: R={R*100:.1f} cm | N={N_turns} | pitch={pitch*1000:.1f} mm | L={L*100:.1f} cm")
+print(f"Total wire segments: {len(seg_starts):,}")
+print("Computing fields…  (this takes ~30–90 s in Colab)\n")
+
+
+
+FIGURE 1 — 3D Quiver Plot of B in a Volume
+
+
+# 3D grid 
+nx, ny, nz = 7, 7, 9
+pad = 1.8 * R
+xg  = np.linspace(-pad, pad, nx)
+yg  = np.linspace(-pad, pad, ny)
+zg  = np.linspace(-L - 2*pitch, L + 2*pitch, nz)
+XX, YY, ZZ = np.meshgrid(xg, yg, zg)
+
+pts3d = np.column_stack([XX.ravel(), YY.ravel(), ZZ.ravel()])
+B3d   = biot_savart(pts3d, seg_starts, seg_ends, I, mu0)
+
+Bx = B3d[:, 0].reshape(XX.shape)
+By = B3d[:, 1].reshape(XX.shape)
+Bz = B3d[:, 2].reshape(XX.shape)
+Bmag = np.sqrt(Bx**2 + By**2 + Bz**2)
+
+# Normalise arrows to unit length
+Bxn = Bx / Bmag;  Byn = By / Bmag;  Bzn = Bz / Bmag
+
+# Colour arrows by log(|B|)
+log_mag  = np.log10(Bmag.ravel() + 1e-20)
+norm_col = Normalize(vmin=log_mag.min(), vmax=log_mag.max())
+cmap_q   = plt.cm.plasma
+colors_q = cmap_q(norm_col(log_mag))
+
+fig = plt.figure(figsize=(12, 9))
+ax  = fig.add_subplot(111, projection='3d')
+
+# Draw quiver arrows (coloured by field strength)
+q = ax.quiver(XX.ravel() * 100, YY.ravel() * 100, ZZ.ravel() * 100,
+              Bxn.ravel(),      Byn.ravel(),       Bzn.ravel(),
+              length=R * 100 * 0.55, normalize=False,
+              color=colors_q, alpha=0.85, linewidth=0.9)
+
+# Draw the solenoid coil rings
+theta_r = np.linspace(0, 2 * np.pi, 200)
+for k, z_c in enumerate(z_loop):
+    alpha = 0.35 + 0.65 * (k / max(N_turns - 1, 1))
+    ax.plot(R * np.cos(theta_r) * 100,
+            R * np.sin(theta_r) * 100,
+            np.full(200, z_c * 100),
+            color='#00E5FF', lw=1.4, alpha=alpha)
+
+# Solenoid axis line
+ax.plot([0, 0], [0, 0],
+        [z_loop[0] * 100 - 2 * pitch * 100,
+         z_loop[-1] * 100 + 2 * pitch * 100],
+        'w--', lw=0.8, alpha=0.5)
+
+# Colorbar
+sm = ScalarMappable(cmap=cmap_q, norm=norm_col)
+sm.set_array([])
+cb = fig.colorbar(sm, ax=ax, pad=0.05, shrink=0.6, aspect=20)
+cb.set_label('log₁₀(|B|)  [log T]', color='white', fontsize=11)
+cb.ax.yaxis.set_tick_params(color='white')
+plt.setp(cb.ax.yaxis.get_ticklabels(), color='white')
+
+ax.set_facecolor('#0a0a1a')
+fig.patch.set_facecolor('#0a0a1a')
+ax.set_xlabel('x  [cm]', color='white');  ax.xaxis.label.set_color('white')
+ax.set_ylabel('y  [cm]', color='white');  ax.yaxis.label.set_color('white')
+ax.set_zlabel('z  [cm]', color='white');  ax.zaxis.label.set_color('white')
+ax.tick_params(colors='white')
+for pane in [ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane]:
+    pane.fill = False
+ax.grid(True, alpha=0.15)
+ax.set_title('3D Magnetic Field of a Finite Solenoid\n(arrow direction = B̂,  colour = log|B|)',
+             color='white', fontsize=13, fontweight='bold', pad=15)
+
+plt.tight_layout()
+plt.show()
