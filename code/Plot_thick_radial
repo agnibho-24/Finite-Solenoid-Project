@@ -1,0 +1,149 @@
+%%This code generates a plot of the amplitude of the magnetic field against radial distance from the central axis of the solenoid, for different values of z, for a finite solenoid with finitely thick wires
+
+clear; clc; close all;
+%% PARAMETERS
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+rm = 0.01;   % wire radius
+rw = 0.015;
+L = N * R * tan(a);
+mu0 = 4*pi*1e-7;
+%% ============================================================
+%% --- THICK WIRE GEOMETRY (VOLUME) ---
+%% ============================================================
+t   = linspace(0, 2*pi*N, 2000);
+phi = linspace(0, 2*pi, 16);
+k   = linspace(0, rm, 6);
+[T,PHI,K] = meshgrid(t,phi,k);
+dt   = t(2)-t(1);
+dphi = phi(2)-phi(1);
+dk   = k(2)-k(1);
+% Geometry
+x = (T/(2*pi)) * R * tan(a) + K.*sin(PHI);
+y = -(R +rw+ K.*cos(PHI)) .* cos(T);
+z =  (R +rw+ K.*cos(PHI)) .* sin(T);
+% Tangent
+dxdt = gradient(x, dt);
+dydt = gradient(y, dt);
+dzdt = gradient(z, dt);
+dl = sqrt(dxdt.^2 + dydt.^2 + dzdt.^2) + 1e-15;
+tx = dxdt ./ dl;
+ty = dydt ./ dl;
+tz = dzdt ./ dl;
+% Current density
+J = I / (pi * rm^2);
+% Current elements
+Jx = J .* tx .* dl .* (K * dphi * dk);
+Jy = J .* ty .* dl .* (K * dphi * dk);
+Jz = J .* tz .* dl .* (K * dphi * dk);
+% Flatten
+xm = x(:); ym = y(:); zm = z(:);
+Jx = Jx(:); Jy = Jy(:); Jz = Jz(:);
+%% ============================================================
+%% --- RADIAL LINE (same as your original code) ---
+%% ============================================================
+x_positions = [-0.05, 0, L/2];  
+r_line = linspace(-0.15, 0.15, 100);
+Bmag_r = zeros(length(x_positions), length(r_line));
+for ixp = 1:length(x_positions)
+    x0 = x_positions(ixp);
+    for ir = 1:length(r_line)
+        y0 = r_line(ir);
+        z0 = 0;
+        rx = x0 - xm;
+        ry = y0 - ym;
+        rz = z0 - zm;
+        r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-10;
+        cx = Jy.*rz - Jz.*ry;
+        cy = Jz.*rx - Jx.*rz;
+        cz = Jx.*ry - Jy.*rx;
+        Bx_val = sum(cx ./ r.^3);
+        By_val = sum(cy ./ r.^3);
+        Bz_val = sum(cz ./ r.^3);
+        Bmag_r(ixp, ir) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+    end
+end
+Bmag_r = mu0/(4*pi) * Bmag_r;
+%% --- PLOT RADIAL CURVES ---
+figure;
+hold on;
+colors = lines(length(x_positions));
+for i = 1:length(x_positions)
+    plot(r_line, Bmag_r(i,:), 'LineWidth', 2, 'Color', colors(i,:));
+end
+xlabel('Radial distance r (m)');
+ylabel('|B| (T)');
+title('Radial dependence of magnetic field (thick wire)');
+legend({...
+    sprintf('z = %.3f (before)', x_positions(1)), ...
+    sprintf('z = %.3f (entrance)', x_positions(2)), ...
+    sprintf('z = %.3f (middle)', x_positions(3)) ...
+});
+grid on;
+%% ============================================================
+%% --- HEATMAP IN (y,z) PLANE WITH ARROWS + WIRE ---
+%% ============================================================
+x_slice = L/2;   % choose slice position
+y_obs = linspace(-0.15, 0.15, 120);
+z_obs = linspace(-0.15, 0.15, 120);
+[Y_obs, Z_obs] = meshgrid(y_obs, z_obs);
+X_obs = x_slice * ones(size(Y_obs));
+Bx = zeros(size(Y_obs));
+By = zeros(size(Y_obs));
+Bz = zeros(size(Y_obs));
+for i = 1:numel(X_obs)
+    rx = X_obs(i) - xm;
+    ry = Y_obs(i) - ym;
+    rz = Z_obs(i) - zm;
+    r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+    cx = Jy.*rz - Jz.*ry;
+    cy = Jz.*rx - Jx.*rz;
+    cz = Jx.*ry - Jy.*rx;
+    Bx(i) = sum(cx ./ r.^3);
+    By(i) = sum(cy ./ r.^3);
+    Bz(i) = sum(cz ./ r.^3);
+end
+Bx = mu0/(4*pi)*Bx;
+By = mu0/(4*pi)*By;
+Bz = mu0/(4*pi)*Bz;
+B = sqrt(Bx.^2 + By.^2 + Bz.^2);
+%% --- HEATMAP ---
+figure
+imagesc(y_obs, z_obs, log10(B + 1e-20))
+set(gca,'YDir','normal')
+axis equal
+colorbar
+xlabel('x (m)')
+ylabel('y (m)')
+title(sprintf('Log_{10}(|B|) in (x,y) plane at z = %.3f', x_slice))
+colormap(jet)
+hold on
+%% ============================================================
+%% --- ARROWS (field direction in plane) ---
+%% ============================================================
+y_coarse = linspace(-0.15, 0.15, 25);
+z_coarse = linspace(-0.15, 0.15, 25);
+[Yc, Zc] = meshgrid(y_coarse, z_coarse);
+By_c = interp2(Y_obs, Z_obs, By, Yc, Zc);
+Bz_c = interp2(Y_obs, Z_obs, Bz, Yc, Zc);
+Bmag_c = sqrt(By_c.^2 + Bz_c.^2);
+uy = By_c ./ (Bmag_c + 1e-12);
+uz = Bz_c ./ (Bmag_c + 1e-12);
+scale = log10(Bmag_c + 1e-20);
+scale = scale - min(scale(:));
+scale = scale / max(scale(:));
+quiver(Yc, Zc, uy.*scale, uz.*scale, 1, 'k')
+%% ============================================================
+%% --- DRAW WIRE CROSS-SECTION (BLACK REGION) ---
+%% ============================================================
+% distance of each volume point from slice
+dx = abs(xm - x_slice);
+% tolerance (thickness of slice)
+tol = dt;  
+mask = dx < tol;
+% project only those points
+y_slice = ym(mask);
+z_slice = zm(mask);
+scatter(y_slice, z_slice, 10, 'k', 'filled')
