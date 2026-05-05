@@ -1,0 +1,72 @@
+%% This code plots a graph of the amplitude of the magnetic field against radial distance from the central axis at different points along the z-axis, for a finite solenoid with infintely thin wires.
+
+clear; clc; close all;
+%% PARAMETERS
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+L = N * R * tan(a);
+%% HELIX GEOMETRY (NOW ALONG Z-AXIS)
+t = linspace(0, 2*pi*N, 2000);
+z = (t/(2*pi)) * R * tan(a);   % axis now along z
+x = R * cos(t);
+y = R * sin(t);
+%% DISCRETIZATION
+dlx = diff(x);
+dly = diff(y);
+dlz = diff(z);
+xm = (x(1:end-1) + x(2:end))/2;
+ym = (y(1:end-1) + y(2:end))/2;
+zm = (z(1:end-1) + z(2:end))/2;
+mu0 = 4*pi*1e-7;
+%% POSITIONS ALONG AXIS (NOW z POSITIONS)
+z_positions = [-0.05, 0, L/2];  % before, entrance, middle
+%% RADIAL LINE (radial direction in x, y=0 plane)
+r_line = linspace(-0.15, 0.15, 100);
+%% STORAGE
+Bmag_r = zeros(length(z_positions), length(r_line));
+%% MAIN COMPUTATION
+for izp = 1:length(z_positions)
+    z0 = z_positions(izp);
+    for ir = 1:length(r_line)
+        x0 = r_line(ir);
+        y0 = 0;
+        rx = x0 - xm;
+        ry = y0 - ym;
+        rz = z0 - zm;
+        r = sqrt(rx.^2 + ry.^2 + rz.^2) + 0.001;
+        % Biot–Savart
+        cx = dly.*rz - dlz.*ry;
+        cy = dlz.*rx - dlx.*rz;
+        cz = dlx.*ry - dly.*rx;
+        Bx_val = sum(cx ./ r.^3);
+        By_val = sum(cy ./ r.^3);
+        Bz_val = sum(cz ./ r.^3);
+        Bmag_r(izp, ir) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+    end
+end
+%% APPLY CONSTANT
+Bmag_r = mu0*I/(4*pi) * Bmag_r;
+%% PLOT
+figure;
+hold on;
+colors = lines(length(z_positions));
+for i = 1:length(z_positions)
+    plot(r_line, Bmag_r(i,:), ...
+        'LineWidth', 2, ...
+        'Color', colors(i,:));
+end
+xlabel('Radial distance r (m)');
+ylabel('|B| (T)');
+title('Radial dependence of magnetic field at different z positions');
+ax = gca;
+ax.Title.String = 'Radial dependence of magnetic field at different z positions';
+ax.Title.Units = 'normalized';
+ax.Title.Position(2) = 1.025; % default ~1, so this lifts it cleanly
+legend({...
+    sprintf('z = %.3f (before)', z_positions(1)), ...
+    sprintf('z = %.3f (entrance)', z_positions(2)), ...
+    sprintf('z = %.3f (middle)', z_positions(3)) ...
+    });
+grid on;
