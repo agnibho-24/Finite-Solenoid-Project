@@ -193,3 +193,83 @@ plt.tight_layout()
 plt.savefig('graph3_radial.png', dpi=150, bbox_inches='tight')
 plt.show()
 
+# GRAPH 3 — Relative deviation from central field
+#            Δ(z) = [Bz(z) − Bz(0)] / Bz(0)
+
+
+dev_z = (Bz_ax - B0) / B0 * 100   # percentage deviation along axis
+
+fig, (ax5a, ax5b) = plt.subplots(1, 2, figsize=(14, 5))
+fig.suptitle('Graph 5 — Relative Deviation from Central Field  $\\Delta(z)$\n'
+             'Defines the Effective Uniform Region',
+             fontsize=13, fontweight='bold')
+
+# Left: full axial span 
+ax5a.plot(z_ax*100, dev_z, color='#1565C0', lw=2.2, label='Discrete loops')
+ax5a.axhline( 0,  color='gray',   lw=0.8)
+ax5a.axhline(-1,  color='#FF8F00', lw=1.2, ls='--', label='±1% tolerance')
+ax5a.axhline( 1,  color='#FF8F00', lw=1.2, ls='--')
+ax5a.axhline(-5,  color='#C62828', lw=1.2, ls='--', label='±5% tolerance')
+ax5a.axhline( 5,  color='#C62828', lw=1.2, ls='--')
+ax5a.axvline(z_loops[0]*100,  color='gray', lw=1.0, ls=':', label='Coil ends')
+ax5a.axvline(z_loops[-1]*100, color='gray', lw=1.0, ls=':')
+
+# shade the ±1% uniform band
+mask_1  = np.abs(dev_z) <= 1
+if mask_1.any():
+    z_uni_lo = z_ax[mask_1][0]*100
+    z_uni_hi = z_ax[mask_1][-1]*100
+    ax5a.axvspan(z_uni_lo, z_uni_hi, alpha=0.10, color='#FF8F00',
+                 label=f'±1% uniform region  ({z_uni_lo:.1f} to {z_uni_hi:.1f} cm)')
+
+ax5a.set_xlabel('z  [cm]', fontsize=12)
+ax5a.set_ylabel('$(B_z(z) - B_z(0)) \\ / \\ B_z(0)$  [%]', fontsize=12)
+ax5a.set_title('Full axial range')
+ax5a.legend(fontsize=9)
+ax5a.set_ylim(min(dev_z.min()-2, -20), max(dev_z.max()+2, 10))
+
+# Right: zoom inside the coil
+mask_in = (z_ax >= z_loops[0]) & (z_ax <= z_loops[-1])
+ax5b.plot(z_ax[mask_in]*100, dev_z[mask_in],
+          color='#1565C0', lw=2.2, label='Discrete loops (inside coil)')
+
+dev_ref = (Bz_ref - B0) / B0 * 100
+ax5b.plot(z_ax[mask_in]*100, dev_ref[mask_in],
+          color='#2E7D32', lw=1.8, ls='--', label='Current sheet (Case 2)')
+
+ax5b.axhline( 0,  color='gray',    lw=0.8)
+ax5b.axhline(-1,  color='#FF8F00', lw=1.2, ls='--', label='±1%')
+ax5b.axhline( 1,  color='#FF8F00', lw=1.2, ls='--')
+ax5b.axhline(-5,  color='#C62828', lw=1.2, ls='--', label='±5%')
+ax5b.axhline( 5,  color='#C62828', lw=1.2, ls='--')
+
+# mark each loop position
+for z_c in z_loops:
+    ax5b.axvline(z_c*100, color='#1565C0', lw=0.7, alpha=0.3)
+
+# shade uniform zones
+mask_1b = mask_in & (np.abs(dev_z) <= 1)
+if mask_1b.any():
+    ax5b.axvspan(z_ax[mask_1b][0]*100, z_ax[mask_1b][-1]*100,
+                 alpha=0.10, color='#FF8F00', label='±1% uniform band')
+mask_5b = mask_in & (np.abs(dev_z) <= 5)
+if mask_5b.any():
+    ax5b.axvspan(z_ax[mask_5b][0]*100, z_ax[mask_5b][-1]*100,
+                 alpha=0.06, color='#C62828', label='±5% uniform band')
+
+# print numbers
+uni_1_len = (z_ax[mask_1b][-1] - z_ax[mask_1b][0])*100 if mask_1b.any() else 0
+uni_5_len = (z_ax[mask_5b][-1] - z_ax[mask_5b][0])*100 if mask_5b.any() else 0
+print(f"±1% uniform length: {uni_1_len:.1f} cm  ({uni_1_len/L/100*100:.0f}% of L)" if mask_1b.any() else "No ±1% region found")
+print(f"±5% uniform length: {uni_5_len:.1f} cm  ({uni_5_len/L/100*100:.0f}% of L)" if mask_5b.any() else "No ±5% region found")
+
+ax5b.set_xlabel('z  [cm]', fontsize=12)
+ax5b.set_ylabel('$(B_z(z) - B_z(0)) \\ / \\ B_z(0)$  [%]', fontsize=12)
+ax5b.set_title('Zoomed — inside coil only\n(faint lines = loop positions)')
+ax5b.legend(fontsize=9)
+ax5b.set_ylim(-15, 5)
+
+plt.tight_layout()
+plt.savefig('graph5_relative_deviation.png', dpi=150, bbox_inches='tight')
+plt.show()
+
