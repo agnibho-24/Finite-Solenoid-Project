@@ -1,0 +1,226 @@
+%% This code compares evolution of b_z component against r, with the ideal solenoid case for a finite solenoid with finitely thick wires.
+
+clear; clc; close all;
+
+%% PARAMETERS
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+
+L = N * R * tan(a);
+
+rm = 0.01;   % wire radius
+rw = 0.02;
+
+mu0 = 4*pi*1e-7;
+
+%% HELIX PARAMETER
+t = linspace(0, 2*pi*N, 1500);
+
+%% CROSS-SECTION DISCRETIZATION
+phi = linspace(0, 2*pi, 12);
+k   = linspace(0, rm, 6);
+
+[T, PHI, K] = meshgrid(t, phi, k);
+
+%% HELIX GEOMETRY (axis along z)
+z = (T/(2*pi)) * R * tan(a);
+
+radius = R + rw + K.*cos(PHI);
+
+x = radius .* cos(T) + K.*sin(PHI).*cos(T);
+y = radius .* sin(T) + K.*sin(PHI).*sin(T);
+
+%% DIFFERENTIAL ELEMENTS
+dt = t(2)-t(1);
+
+dxdt = gradient(x, dt);
+dydt = gradient(y, dt);
+dzdt = gradient(z, dt);
+
+dlx = dxdt * dt;
+dly = dydt * dt;
+dlz = dzdt * dt;
+
+%% MIDPOINTS
+xm = x;
+ym = y;
+zm = z;
+
+%% CURRENT WEIGHTING
+dA = K * dphi * dk;   % area element in cross-section
+A_total = pi * rm^2;
+
+I_elements = I * (dA / A_total);
+
+%% OBSERVATION GRID
+[x_obs, y_obs] = meshgrid(linspace(-0.2,0.2,150), linspace(-0.2,0.2,150));
+z_obs = zeros(size(x_obs));
+
+Bx = zeros(size(x_obs));
+By = zeros(size(x_obs));
+Bz = zeros(size(x_obs));
+
+%% FIELD COMPUTATION
+for i = 1:numel(x_obs)
+
+    rx = x_obs(i) - xm;
+    ry = y_obs(i) - ym;
+    rz = z_obs(i) - zm;
+
+    r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-5;
+
+    cx = dly.*rz - dlz.*ry;
+    cy = dlz.*rx - dlx.*rz;
+    cz = dlx.*ry - dly.*rx;
+
+    Bx(i) = sum((I_elements .* cx) ./ r.^3, 'all');
+    By(i) = sum((I_elements .* cy) ./ r.^3, 'all');
+    Bz(i) = sum((I_elements .* cz) ./ r.^3, 'all');
+end
+
+Bx = mu0/(4*pi)*Bx;
+By = mu0/(4*pi)*By;
+Bz = mu0/(4*pi)*Bz;
+
+B = sqrt(Bx.^2 + By.^2 + Bz.^2);
+
+%% HEATMAP
+figure
+imagesc(linspace(-0.2,0.2,150), linspace(-0.2,0.2,150), log10(B + 1e-20))
+set(gca,'YDir','normal')
+axis equal
+colorbar
+xlabel('x (m)')
+ylabel('y (m)')
+
+ax = gca;
+ax.Title.String = 'log_{10}(|B|) thick solenoid (z = 0)';
+ax.Title.Units = 'normalized';
+ax.Title.Position(2) = 1.08;
+
+hold on
+
+%% VECTOR FIELD
+[xc, yc] = meshgrid(linspace(-0.2,0.2,25), linspace(-0.2,0.2,25));
+
+Bx_c = interp2(x_obs, y_obs, Bx, xc, yc);
+By_c = interp2(x_obs, y_obs, By, xc, yc);
+
+Bmag_c = sqrt(Bx_c.^2 + By_c.^2);
+
+ux = Bx_c ./ (Bmag_c + 1e-12);
+uy = By_c ./ (Bmag_c + 1e-12);
+
+quiver(xc, yc, ux, uy, 0.5, 'k')
+
+%% AXIAL FIELD Bz(z)
+z_line = linspace(-0.3, L+0.3, 200);
+r_vals = [0, 0.02, 0.08, 0.14, 0.2];
+
+Bz_all = zeros(length(r_vals), length(z_line));
+
+for ir = 1:length(r_vals)
+
+    x0 = r_vals(ir);
+    y0 = 0;
+
+    for iz = 1:length(z_line)
+
+        z0 = z_line(iz);
+
+        rx = x0 - xm;
+        ry = y0 - ym;
+        rz = z0 - zm;
+
+        r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+
+        cx = dly.*rz - dlz.*ry;
+        cy = dlz.*rx - dlx.*rz;
+        cz = dlx.*ry - dly.*rx;
+
+        Bz_all(ir, iz) = sum((I_elements .* cz) ./ r.^3, 'all');
+    end
+end
+
+Bz_all = mu0/(4*pi)*Bz_all;
+
+%% ============================================================
+%% IDEAL SQUARE SOLENOID
+%% ============================================================
+
+n = N / L;
+B0 = mu0 * n * I;
+
+B_square = zeros(size(z_line));
+
+for i = 1:length(z_line)
+    if z_line(i) >= 0 && z_line(i) <= L
+        B_square(i) = B0;
+    else
+        B_square(i) = 0;
+    end
+end
+
+%% FINAL PLOT
+figure;
+hold on;
+
+colors = lines(length(r_vals));
+
+for ir = 1:length(r_vals)
+    plot(z_line, Bz_all(ir,:), 'LineWidth', 2, 'Color', colors(ir,:));
+end
+
+% ✅ Ideal square profile
+plot(z_line, B_square, 'k--', 'LineWidth', 3);
+
+xlabel('z (m)');
+ylabel('B_z (T)');
+
+ax = gca;
+ax.Title.String = 'B_z along axis (thick solenoid) vs ideal square model';
+ax.Title.Units = 'normalized';
+ax.Title.Position(2) = 1.05;
+
+legend_entries = arrayfun(@(r) sprintf('r = %.3f m', r), r_vals, 'UniformOutput', false);
+legend_entries{end+1} = 'Ideal (square)';
+legend(legend_entries);
+
+grid on
+
+%% ============================================================
+%% RELATIVE ERROR (ALL RADII, NO BLOW-UP)
+%% ============================================================
+
+epsilon = B0*0.01;   % scale to regularize denominator
+
+figure;
+hold on;
+
+colors = lines(length(r_vals));
+
+for ir = 1:length(r_vals)
+
+    % Relative error (regularized)
+    error_rel = abs(Bz_all(ir,:) - B_square) ./ (abs(B_square) + epsilon);
+
+    plot(z_line, error_rel, 'LineWidth', 2, 'Color', colors(ir,:));
+end
+
+% Mark solenoid region
+xline(0, 'k:', 'LineWidth', 1.5);
+xline(L, 'k:', 'k:', 'LineWidth', 1.5);
+
+xlabel('z (m)');
+ylabel('Relative error');
+
+ax = gca;
+ax.Title.String = 'Relative error vs ideal solenoid (all radii)';
+ax.Title.Units = 'normalized';
+ax.Title.Position(2) = 1.05;
+
+legend(arrayfun(@(r) sprintf('r = %.3f m', r), r_vals, 'UniformOutput', false));
+
+grid on;
