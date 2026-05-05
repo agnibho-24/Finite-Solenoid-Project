@@ -1,0 +1,146 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+mu0 = 4*np.pi*1e-7
+
+I = 1.0          # current [A]
+R = 0.05         # loop radius [m]
+L = 0.20         # solenoid length [m]
+N_turns = 30     # number of circular loops
+
+points_per_loop = 200
+def make_circular_loops(R, L, N_turns, points_per_loop):
+    """
+    Creates N separate circular loops along the z-axis.
+
+    Each loop is:
+        x = R cos(theta)
+        y = R sin(theta)
+        z = constant
+    """
+
+    theta = np.linspace(0, 2*np.pi, points_per_loop + 1)
+
+    z_positions = np.linspace(-L/2, L/2, N_turns)
+
+    loops = []
+
+    for z0 in z_positions:
+        x = R*np.cos(theta)
+        y = R*np.sin(theta)
+        z = z0*np.ones_like(theta)
+
+        loop = np.column_stack((x, y, z))
+        loops.append(loop)
+
+    return loops, z_positions
+def magnetic_field_from_loops(obs_points, loops, I):
+    """
+    Computes magnetic field from many independent circular loops.
+
+    
+    Each loop treated separately
+    """
+
+    B_total = np.zeros_like(obs_points)
+
+    for loop in loops:
+        for j in range(len(loop) - 1):
+            r1 = loop[j]
+            r2 = loop[j + 1]
+
+            dl = r2 - r1
+            r_mid = 0.5*(r1 + r2)
+
+            r_vec = obs_points - r_mid
+            r_norm = np.linalg.norm(r_vec, axis=1)
+
+            mask = r_norm > 1e-10
+
+            dB = np.zeros_like(obs_points)
+            dB[mask] = (
+                mu0 * I / (4*np.pi)
+                * np.cross(dl, r_vec[mask])
+                / r_norm[mask, None]**3
+            )
+
+            B_total += dB
+
+    return B_total
+z_obs = np.linspace(-0.30, 0.30, 500)
+
+obs_axis = np.column_stack((
+    np.zeros_like(z_obs),
+    np.zeros_like(z_obs),
+    z_obs
+))
+loops, z_positions = make_circular_loops(R, L, N_turns, points_per_loop)
+
+B_axis = magnetic_field_from_loops(obs_axis, loops, I)
+Bz_axis = B_axis[:, 2]
+n = N_turns / L
+B_ideal = mu0 * n * I
+
+plt.figure(figsize=(9, 5))
+
+plt.plot(z_obs, Bz_axis, label="Numerical finite circular-loop solenoid")
+plt.axhline(B_ideal, linestyle="--", label=r"Ideal infinite solenoid: $\mu_0 n I$")
+
+plt.axvline(-L/2, linestyle=":", label="Solenoid ends")
+plt.axvline(L/2, linestyle=":")
+
+plt.xlabel("z position [m]")
+plt.ylabel(r"$B_z$ on axis [T]")
+plt.title("Finite solenoid made of circular loops")
+plt.grid(True)
+plt.legend()
+plt.show()
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111, projection="3d")
+
+for loop in loops:
+    ax.plot(loop[:, 0], loop[:, 1], loop[:, 2])
+
+ax.set_xlabel("x [m]")
+ax.set_ylabel("y [m]")
+ax.set_zlabel("z [m]")
+ax.set_title("Geometry: finite solenoid made of separate circular loops")
+
+ax.set_box_aspect([1, 1, 2])
+plt.show()
+##
+
+# Axial oscillations close to the wire
+
+z_vals_fine = np.linspace(-L/2, L/2, 2000)
+
+r_close_values = [
+    0.80*R,
+    0.90*R,
+    0.95*R,
+    0.99*R
+]
+
+plt.figure(figsize=(10, 5))
+
+for r0 in r_close_values:
+    obs_near_wire = np.column_stack((
+        r0*np.ones_like(z_vals_fine),
+        np.zeros_like(z_vals_fine),
+        z_vals_fine
+    ))
+
+    B_near_wire = magnetic_field_from_loops(obs_near_wire, loops, I)
+    Bz_near_wire = B_near_wire[:, 2]
+
+    plt.plot(z_vals_fine, Bz_near_wire, label=fr"$r/R = {r0/R:.2f}$")
+
+for z_loop in z_positions:
+    plt.axvline(z_loop, color="gray", linestyle=":", alpha=0.25)
+
+plt.xlabel("z [m]")
+plt.ylabel(r"$B_z$ [T]")
+plt.title(r"Axial oscillations of $B_z$ close to the wires")
+plt.grid(True)
+plt.legend()
+plt.show()
