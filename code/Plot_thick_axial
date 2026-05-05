@@ -1,0 +1,162 @@
+%% This code generates a plot of the amplitude of the magnetic field against position along z_axis at different radial distances from it, for a finite solenoid with finitely thick wires.
+
+clear; clc; close all;
+%% --- Parameters ---
+R = 0.1;
+N = 20;
+a = 0.3;
+I = 1;
+rm = 0.01;   % wire radius
+rw = 0.015;
+L = N * R * tan(a);
+mu0 = 4*pi*1e-7;
+%% ============================================================
+%% --- THICK WIRE GEOMETRY ---
+%% ============================================================
+t   = linspace(0,2*pi*N,4000);
+phi = linspace(0,2*pi,20);
+k   = linspace(0,rm,8);
+[T,PHI,K] = meshgrid(t,phi,k);
+dt   = t(2)-t(1);
+dphi = phi(2)-phi(1);
+dk   = k(2)-k(1);
+% Geometry
+x = ((T/(2*pi))*R*tan(a)) + K.*sin(PHI);
+y = -(R+rw+(K.*cos(PHI))).*cos(T);
+z =  (R+rw+(K.*cos(PHI))).*sin(T);
+% Tangent
+dxdt = gradient(x, dt);
+dydt = gradient(y, dt);
+dzdt = gradient(z, dt);
+dl = sqrt(dxdt.^2 + dydt.^2 + dzdt.^2) + 1e-15;
+tx = dxdt ./ dl;
+ty = dydt ./ dl;
+tz = dzdt ./ dl;
+% Current density
+J = I / (pi * rm^2);
+% Current elements (same as your working axial code)
+Jx = J .* tx .* dl .* (K * dphi * dk);
+Jy = J .* ty .* dl .* (K * dphi * dk);
+Jz = J .* tz .* dl .* (K * dphi * dk);
+% Flatten
+xm = x(:); ym = y(:); zm = z(:);
+Jx = Jx(:); Jy = Jy(:); Jz = Jz(:);
+%% ============================================================
+%% --- FIELD MAP (x-y plane) ---
+%% ============================================================
+x_obs = linspace(-0.3, L+0.3, 120);
+y_obs = linspace(-0.3, 0.3, 120);
+[X_obs, Y_obs] = meshgrid(x_obs, y_obs);
+Z_obs = zeros(size(X_obs));
+Bx = zeros(size(X_obs));
+By = zeros(size(X_obs));
+Bz = zeros(size(X_obs));
+for i = 1:numel(X_obs)
+    rx = X_obs(i) - xm;
+    ry = Y_obs(i) - ym;
+    rz = Z_obs(i) - zm;
+    r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+    cx = Jy.*rz - Jz.*ry;
+    cy = Jz.*rx - Jx.*rz;
+    cz = Jx.*ry - Jy.*rx;
+    Bx(i) = sum(cx ./ r.^3);
+    By(i) = sum(cy ./ r.^3);
+    Bz(i) = sum(cz ./ r.^3);
+end
+Bx = mu0/(4*pi)*Bx;
+By = mu0/(4*pi)*By;
+Bz = mu0/(4*pi)*Bz;
+B = sqrt(Bx.^2 + By.^2 + Bz.^2);
+%% --- HEATMAP ---
+figure
+imagesc(x_obs, y_obs, log10(B + 1e-20))
+set(gca,'YDir','normal')
+axis equal
+colorbar
+xlabel('z (m)')
+ylabel('x (m)')
+title('Log_{10}(|B|) in (x,z) plane')
+colormap(jet)
+hold on
+% Wire projection
+scatter(x(:), y(:), 5, 'k', 'filled', 'MarkerFaceAlpha', 0.05)
+%% ============================================================
+%% --- AXIAL FIELD B(x) ---
+%% ============================================================
+x_line = linspace(-0.3, L+0.3, 200);
+r_vals = [0, 0.02, 0.08, 0.12, 0.2];
+Bmag_axial = zeros(length(r_vals), length(x_line));
+for ir = 1:length(r_vals)
+    y0 = r_vals(ir);
+    z0 = 0;
+    for ix = 1:length(x_line)
+        x0 = x_line(ix);
+        rx = x0 - xm;
+        ry = y0 - ym;
+        rz = z0 - zm;
+        r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+        cx = Jy.*rz - Jz.*ry;
+        cy = Jz.*rx - Jx.*rz;
+        cz = Jx.*ry - Jy.*rx;
+        Bx_val = sum(cx ./ r.^3);
+        By_val = sum(cy ./ r.^3);
+        Bz_val = sum(cz ./ r.^3);
+        Bmag_axial(ir, ix) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+    end
+end
+Bmag_axial = mu0/(4*pi) * Bmag_axial;
+figure;
+hold on;
+colors = lines(length(r_vals));
+for ir = 1:length(r_vals)
+    plot(x_line, Bmag_axial(ir,:), 'LineWidth', 2, 'Color', colors(ir,:));
+end
+xlabel('z (m)');
+ylabel('|B| (T)');
+title('|B(z)| at different radial distances');
+legend(arrayfun(@(r) sprintf('r = %.3f m', r), r_vals, 'UniformOutput', false));
+grid on;
+%% ============================================================
+%% --- RADIAL FIELD B(r) ---
+%% ============================================================
+r_line = linspace(-0.3, 0.3, 200);
+x_positions = [-0.05, 0, L/2];
+Bmag_radial = zeros(length(x_positions), length(r_line));
+for ixp = 1:length(x_positions)
+    x0 = x_positions(ixp);
+    for ir = 1:length(r_line)
+        y0 = r_line(ir);
+        z0 = 0;
+        rx = x0 - xm;
+        ry = y0 - ym;
+        rz = z0 - zm;
+        r = sqrt(rx.^2 + ry.^2 + rz.^2) + 1e-12;
+        cx = Jy.*rz - Jz.*ry;
+        cy = Jz.*rx - Jx.*rz;
+        cz = Jx.*ry - Jy.*rx;
+        Bx_val = sum(cx ./ r.^3);
+        By_val = sum(cy ./ r.^3);
+        Bz_val = sum(cz ./ r.^3);
+        % SAME as axial → magnitude
+        Bmag_radial(ixp, ir) = sqrt(Bx_val.^2 + By_val.^2 + Bz_val.^2);
+    end
+end
+Bmag_radial = mu0/(4*pi) * Bmag_radial;
+%% --- Plot radial field ---
+figure;
+hold on;
+colors = lines(length(x_positions));
+for i = 1:length(x_positions)
+    plot(r_line, Bmag_radial(i,:), ...
+        'LineWidth', 2, ...
+        'Color', colors(i,:));
+end
+xlabel('Radial distance r (m)');
+ylabel('|B| (T)');
+title('|B(r)| at different positions along solenoid');
+legend({...
+    sprintf('z = %.3f (before)', x_positions(1)), ...
+    sprintf('z = %.3f (entrance)', x_positions(2)), ...
+    sprintf('z = %.3f (middle)', x_positions(3)) ...
+});
+grid on;
